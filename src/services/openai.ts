@@ -55,7 +55,8 @@ For each response, provide exercises in the following JSON format:
 
 Always include all seven exercise types in your response. Ensure the response is valid JSON.`;
 
-const ANALYSIS_PROMPT = `As an inner healing expert therapist, analyze the user's input and identify at least 3 key inner child triggers. For each trigger, provide detailed potential causes and a structured deep dive exercise with exactly 4 points and examples.
+const ANALYSIS_PROMPT = `As an inner healing expert therapist, analyze the user's input and identify 3 or more key inner child triggers. 
+For each trigger, provide detailed potential causes and a structured deep dive exercise with exactly 4 points and examples.
 
 Your response should follow this exact format in JSON:
 
@@ -164,7 +165,7 @@ export async function getChatResponse(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...conversationHistory,
@@ -199,7 +200,7 @@ export async function getInnerChildAnalysis(message: string): Promise<any> {
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4o",
       messages: [
         { role: "system", content: ANALYSIS_PROMPT },
         { role: "user", content: message }
