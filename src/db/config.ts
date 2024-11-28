@@ -1,65 +1,69 @@
-import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import { createClient } from '@supabase/supabase-js'
 
-let db: any = null;
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_URL')
+}
 
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  throw new Error('Missing env.NEXT_PUBLIC_SUPABASE_ANON_KEY')
+}
+
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+)
+
+// Initialize database (optional, mainly for type checking)
 export async function initDatabase() {
-  if (db) return db;
-
   try {
-    const sqlite3 = await sqlite3InitModule({
-      print: console.log,
-      printErr: console.error,
-    });
-
-    const opfsDb = await sqlite3.oo1.OpfsDb('journeys.db');
-    db = opfsDb;
-
-    await createTables();
-    await insertDemoUser();
-
-    return db;
+    // You can add any initialization logic here if needed
+    return supabase;
   } catch (error) {
     console.error('Failed to initialize database:', error);
     throw error;
   }
 }
 
-async function createTables() {
-  const schema = `
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      name TEXT
-    );
+// Example functions for database operations
+export async function createUser(email: string, name: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .insert([{ email, name }])
+    .select()
+    .single();
 
-    CREATE TABLE IF NOT EXISTS journeys (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      prompt TEXT NOT NULL,
-      user_id INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users (id)
-    );
-
-    CREATE TABLE IF NOT EXISTS journey_responses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      journey_id INTEGER NOT NULL,
-      heading TEXT NOT NULL,
-      response TEXT NOT NULL,
-      audio_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (journey_id) REFERENCES journeys (id),
-      UNIQUE(journey_id, heading)
-    );
-  `;
-
-  await db.exec(schema);
+  if (error) throw error;
+  return data;
 }
 
-async function insertDemoUser() {
-  await db.exec(`
-    INSERT OR IGNORE INTO users (id, email, name) 
-    VALUES (1, 'demo@example.com', 'Demo User')
-  `);
+export async function createJourney(prompt: string, userId: number) {
+  const { data, error } = await supabase
+    .from('journeys')
+    .insert([{ prompt, user_id: userId }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
-export { db };
+export async function createJourneyResponse(
+  journeyId: number, 
+  heading: string, 
+  response: string, 
+  audioUrl?: string
+) {
+  const { data, error } = await supabase
+    .from('journey_responses')
+    .insert([{
+      journey_id: journeyId,
+      heading,
+      response,
+      audio_url: audioUrl
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}

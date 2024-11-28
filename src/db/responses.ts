@@ -1,4 +1,4 @@
-import { initDatabase } from './config';
+import { supabase } from './config';
 
 export async function updateJourneyResponse(
   journeyId: number,
@@ -6,15 +6,21 @@ export async function updateJourneyResponse(
   response: string,
   audioUrl?: string
 ) {
-  const db = await initDatabase();
   try {
-    const stmt = db.prepare(`
-      INSERT INTO journey_responses (journey_id, heading, response, audio_url)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(journey_id, heading) 
-      DO UPDATE SET response = ?, audio_url = ?
-    `);
-    stmt.run([journeyId, heading, response, audioUrl, response, audioUrl]);
+    const { data, error } = await supabase
+      .from('journey_responses')
+      .upsert({
+        journey_id: journeyId,
+        heading,
+        response,
+        audio_url: audioUrl
+      }, {
+        onConflict: 'journey_id,heading'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
     return true;
   } catch (error) {
     console.error('Failed to update journey response:', error);
@@ -23,14 +29,14 @@ export async function updateJourneyResponse(
 }
 
 export async function getJourneyResponses(journeyId: number) {
-  const db = await initDatabase();
   try {
-    const stmt = db.prepare(`
-      SELECT heading, response, audio_url
-      FROM journey_responses
-      WHERE journey_id = ?
-    `);
-    return stmt.all([journeyId]);
+    const { data, error } = await supabase
+      .from('journey_responses')
+      .select('heading, response, audio_url')
+      .eq('journey_id', journeyId);
+
+    if (error) throw error;
+    return data;
   } catch (error) {
     console.error('Failed to get journey responses:', error);
     return [];

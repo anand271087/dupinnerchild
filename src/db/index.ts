@@ -1,4 +1,4 @@
-import { get, set, del } from 'idb-keyval';
+import { supabase } from './config';
 
 export interface Journey {
   id: string;
@@ -6,24 +6,19 @@ export interface Journey {
   exercises: any;
   analysis: any;
   responses: JourneyResponse[];
-  timestamp: string;
+  created_at: string;
 }
 
 export interface JourneyResponse {
   heading: string;
   response: string;
-  audioUrl?: string;
+  audio_url?: string;
 }
-
-const JOURNEY_PREFIX = 'journey_';
-const JOURNEY_KEYS = 'journeyKeys';
 
 export const db = {
   async initDatabase() {
     try {
-      // Initialize IndexedDB store
-      await get(JOURNEY_KEYS);
-      return true;
+      return supabase;
     } catch (error) {
       console.error('Failed to initialize database:', error);
       return false;
@@ -31,25 +26,20 @@ export const db = {
   },
 
   async saveJourney(userId: number, prompt: string, exercises: any = null, analysis: any = null): Promise<string> {
-    const id = `${Date.now()}`;
-    const journey: Journey = {
-      id,
-      prompt,
-      exercises,
-      analysis,
-      responses: [],
-      timestamp: new Date().toISOString()
-    };
-
     try {
-      // Save the journey
-      await set(`${JOURNEY_PREFIX}${id}`, journey);
-      
-      // Update journey keys list
-      const existingKeys = await get(JOURNEY_KEYS) || [];
-      await set(JOURNEY_KEYS, [id, ...existingKeys]);
-      
-      return id;
+      const { data, error } = await supabase
+        .from('journeys')
+        .insert([{
+          user_id: userId,
+          prompt,
+          exercises,
+          analysis,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data.id;
     } catch (error) {
       console.error('Failed to save journey:', error);
       throw error;
@@ -58,17 +48,30 @@ export const db = {
 
   async getJourneyHistory(userId: number): Promise<Journey[]> {
     try {
-      const journeyKeys = await get(JOURNEY_KEYS) || [];
-      const journeys = await Promise.all(
-        journeyKeys.map(async (key: string) => {
-          const journey = await get(`${JOURNEY_PREFIX}${key}`);
-          return journey;
-        })
-      );
+      const { data, error } = await supabase
+        .from('journeys')
+        .select(`
+          id,
+          prompt,
+          exercises,
+          analysis,
+          created_at,
+          journey_responses (
+            heading,
+            response,
+            audio_url
+          )
+        `)
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
       
-      return journeys
-        .filter(Boolean)
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return data.map(journey => ({
+        ...journey,
+        responses: journey.journey_responses || [],
+        timestamp: journey.created_at
+      }));
     } catch (error) {
       console.error('Failed to get journey history:', error);
       return [];
@@ -77,13 +80,12 @@ export const db = {
 
   async deleteJourney(journeyId: string): Promise<boolean> {
     try {
-      // Delete the journey
-      await del(`${JOURNEY_PREFIX}${journeyId}`);
-      
-      // Update journey keys list
-      const existingKeys = await get(JOURNEY_KEYS) || [];
-      await set(JOURNEY_KEYS, existingKeys.filter(key => key !== journeyId));
-      
+      const { error } = await supabase
+        .from('journeys')
+        .delete()
+        .eq('id', journeyId);
+
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error('Failed to delete journey:', error);
@@ -98,20 +100,18 @@ export const db = {
     audioUrl?: string
   ): Promise<boolean> {
     try {
-      const journey: Journey | undefined = await get(`${JOURNEY_PREFIX}${journeyId}`);
-      if (!journey) return false;
+      const { error } = await supabase
+        .from('journey_responses')
+        .upsert({
+          journey_id: journeyId,
+          heading,
+          response,
+          audio_url: audioUrl
+        }, {
+          onConflict: 'journey_id,heading'
+        });
 
-      const updatedResponses = [...journey.responses];
-      const existingIndex = updatedResponses.findIndex(r => r.heading === heading);
-      
-      if (existingIndex >= 0) {
-        updatedResponses[existingIndex] = { heading, response, audioUrl };
-      } else {
-        updatedResponses.push({ heading, response, audioUrl });
-      }
-
-      journey.responses = updatedResponses;
-      await set(`${JOURNEY_PREFIX}${journeyId}`, journey);
+      if (error) throw error;
       return true;
     } catch (error) {
       console.error('Failed to update journey response:', error);
@@ -121,8 +121,17 @@ export const db = {
 
   async getJourneyResponses(journeyId: string): Promise<JourneyResponse[]> {
     try {
-      const journey: Journey | undefined = await get(`${JOURNEY_PREFIX}${journeyId}`);
-      return journey?.responses || [];
+      const { data, error } = await supabase
+        .from('journey_responses')
+        .select('heading, response, audio_url')
+        .eq('journey_id', journeyId);
+
+      if (error) throw error;
+      return data.map(response => ({
+        heading: response.heading,
+        response: response.response,
+        audioUrl: response.audio_url
+      }));
     } catch (error) {
       console.error('Failed to get journey responses:', error);
       return [];

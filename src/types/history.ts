@@ -7,5 +7,6 @@ export interface JourneyEntry {
     steps: string[];
   }>;
   analysis?: any;
-  timestamp: string;
+  created_at: string;
+  user_id: number;
 }

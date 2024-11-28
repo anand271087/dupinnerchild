@@ -1,11 +1,15 @@
-import { initDatabase } from './config';
+import { supabase } from './config';
 
 export async function saveJourney(userId: number, prompt: string) {
-  const db = await initDatabase();
   try {
-    const stmt = db.prepare('INSERT INTO journeys (prompt, user_id) VALUES (?, ?)');
-    const result = stmt.run([prompt, userId]);
-    return result.lastInsertRowId;
+    const { data, error } = await supabase
+      .from('journeys')
+      .insert([{ user_id: userId, prompt }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data.id;
   } catch (error) {
     console.error('Failed to save journey:', error);
     throw error;
@@ -13,29 +17,26 @@ export async function saveJourney(userId: number, prompt: string) {
 }
 
 export async function getJourneyHistory(userId: number) {
-  const db = await initDatabase();
   try {
-    const stmt = db.prepare(`
-      SELECT 
-        j.id,
-        j.prompt,
-        j.created_at,
-        GROUP_CONCAT(json_object(
-          'heading', jr.heading,
-          'response', jr.response,
-          'audio_url', jr.audio_url
-        )) as responses
-      FROM journeys j
-      LEFT JOIN journey_responses jr ON j.id = jr.journey_id
-      WHERE j.user_id = ?
-      GROUP BY j.id
-      ORDER BY j.created_at DESC
-    `);
-    
-    const rows = stmt.all([userId]);
-    return rows.map(row => ({
-      ...row,
-      responses: row.responses ? JSON.parse(`[${row.responses}]`) : []
+    const { data, error } = await supabase
+      .from('journeys')
+      .select(`
+        id,
+        prompt,
+        created_at,
+        journey_responses (
+          heading,
+          response,
+          audio_url
+        )
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data.map(journey => ({
+      ...journey,
+      responses: journey.journey_responses || []
     }));
   } catch (error) {
     console.error('Failed to get journey history:', error);
@@ -44,17 +45,15 @@ export async function getJourneyHistory(userId: number) {
 }
 
 export async function deleteJourney(journeyId: number) {
-  const db = await initDatabase();
   try {
-    await db.exec('BEGIN TRANSACTION');
-    const stmt1 = db.prepare('DELETE FROM journey_responses WHERE journey_id = ?');
-    const stmt2 = db.prepare('DELETE FROM journeys WHERE id = ?');
-    stmt1.run([journeyId]);
-    stmt2.run([journeyId]);
-    await db.exec('COMMIT');
+    const { error } = await supabase
+      .from('journeys')
+      .delete()
+      .eq('id', journeyId);
+
+    if (error) throw error;
     return true;
   } catch (error) {
-    await db.exec('ROLLBACK');
     console.error('Failed to delete journey:', error);
     throw error;
   }
